@@ -113,17 +113,39 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     return m;
   }, [salesOrderData]);
 
-  const salesOrderOptions = useMemo(() => salesOrderData ?? [], [salesOrderData]);
+  const salesOrderOptions = useMemo(() => {
+    // 1. Get all active SO strings for lookup
+    const activeSOStrings = new Set(
+      (salesOrderData ?? []).map((so: any) => String(so.sales_order ?? so.sales_order_no ?? "").trim())
+    );
+
+    // 2. Create merged list starting with active data
+    const merged = [...(salesOrderData ?? [])];
+
+    // 3. Add SOs from current lines that aren't in active list (historical)
+    for (const line of lines) {
+      const soVal = String(line.sales_order ?? "").trim();
+      if (soVal && !activeSOStrings.has(soVal)) {
+        merged.push({ sales_order: soVal, buyer: line.buyer } as any);
+        activeSOStrings.add(soVal);
+      }
+    }
+
+    return merged;
+  }, [salesOrderData, lines]);
 
 
   const outstandingIndex = useMemo(() => {
     const m = new Map<string, number>();
 
     for (const r of outstandingData ?? []) {
-      const lot = r?.lot_no;
-      const wh = r?.warehouse_location; // defensive
+      const itemR = r as any;
+      // 'Try-all' defensive lookup for lot and warehouse
+      const lot = itemR?.lot_no ?? itemR?.lot_number ?? itemR?.lot;
+      const wh = itemR?.warehouse_location ?? itemR?.wh_name_lot_location ?? itemR?.warehouse ?? itemR?.wh;
+
       const key = makeKey(lot, wh);
-      const qty = Number(r?.outstanding_stock ?? 0) || 0;
+      const qty = Number(itemR?.outstanding_stock ?? 0) || 0;
       m.set(key, (m.get(key) ?? 0) + qty);
     }
 
@@ -177,9 +199,10 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const tId = toast.loading("Loading planning (local)...");
 
     // Filter local Redux state
-    const matches = (allPlannedData ?? []).filter((item: any) =>
-      String(item.sales_order_no ?? "").trim() === so
-    );
+    const matches = (allPlannedData ?? []).filter((item: any) => {
+      const itemSO = String(item.sales_order ?? item.sales_order_no ?? "").trim();
+      return itemSO === so;
+    });
 
     if (matches.length === 0) {
       toast.dismiss(tId);
@@ -193,20 +216,20 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const buyerFromSO = salesOrderIndex.get(so)?.buyer ?? "";
 
     const normalized = matches.map((item: any) => {
-      const lot = String(item.lot_no ?? "").trim();
-      const wh = String(item.wh_name_lot_location ?? "").trim();
+      const lot = String(item.lot_no ?? item.lot_number ?? item.lot ?? "").trim();
+      const wh = String(item.wh_name_lot_location ?? item.warehouse ?? item.warehouse_location ?? "").trim();
       const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
 
       return {
         ...emptyLine(),
         _rowNumber: item._rowNumber,
         _uid: String(item.uid ?? ""),
-        sales_order: String(item.sales_order_no ?? so),
-        buyer: String(item.buyer_name ?? buyerFromSO ?? ""),
+        sales_order: String(item.sales_order ?? item.sales_order_no ?? so),
+        buyer: String(item.buyer_name ?? item.buyer ?? buyerFromSO ?? ""),
         lot,
         warehouse: wh,
-        quality: String(item.quality_name ?? ""),
-        bags_for_planning: Number(item.number_of_planned_bags ?? 0),
+        quality: String(item.quality_name ?? item.quality ?? ""),
+        bags_for_planning: Number(item.number_of_planned_bags ?? item.planned_bags ?? 0),
         total_bags: max,
       };
     });
@@ -224,9 +247,10 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const tId = toast.loading("Loading planning (local)...");
 
     // Filter local Redux state
-    const matches = (allPlannedData ?? []).filter((item: any) =>
-      String(item.lot_no ?? "").trim() === lotInput
-    );
+    const matches = (allPlannedData ?? []).filter((item: any) => {
+      const itemLot = String(item.lot_no ?? item.lot_number ?? item.lot ?? "").trim();
+      return itemLot === lotInput;
+    });
 
     if (matches.length === 0) {
       toast.dismiss(tId);
@@ -235,7 +259,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     }
 
     setEditLot(lotInput);
-    const so = String(matches[0]?.sales_order_no ?? "").trim();
+    const so = String(matches[0]?.sales_order_no ?? matches[0]?.sales_order ?? "").trim();
     if (so) setEditSalesOrder(so);
     setPlanner(String(matches[0]?.planning_submitted_by ?? ""));
 
