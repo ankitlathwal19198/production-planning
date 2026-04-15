@@ -118,6 +118,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const activeSOStrings = new Set(
       (salesOrderData ?? []).map((so: any) => String(so.sales_order ?? so.sales_order_no ?? "").trim())
     );
+    
 
     // 2. Create merged list starting with active data
     const merged = [...(salesOrderData ?? [])];
