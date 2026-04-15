@@ -1,0 +1,267 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+html,
+body {
+  height: 100%;
+}
+
+/* ============================= */
+/* Custom Scrollbars (SaaS style) */
+/* ============================= */
+
+/* Light theme (default) */
+:root {
+  --sb-track: rgba(15, 23, 42, 0.06);   /* slate-900 */
+  --sb-thumb: rgba(15, 23, 42, 0.28);
+  --sb-thumb-hover: rgba(15, 23, 42, 0.45);
+}
+
+/* Dark theme */
+.dark:root {
+  --sb-track: rgba(255, 255, 255, 0.08);
+  --sb-thumb: rgba(255, 255, 255, 0.28);
+  --sb-thumb-hover: rgba(255, 255, 255, 0.5);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
+
+/* Chrome / Edge / Safari */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--sb-track);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sb-thumb-hover);
+}
+::-webkit-scrollbar-thumb {
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2);
+}
+
+
+
+
+
+
+
+/* =========================
+   Theme Tokens (Light/Dark)
+   ========================= */
+
+/* Light (default) */
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: rgba(2, 6, 23, 0.03); /* subtle tint */
+  --border: rgba(15, 23, 42, 0.10);
+
+  --text: #0f172a;      /* slate-900 */
+  --muted: #64748b;     /* slate-500 */
+
+  --primary: #2563eb;        /* blue-600 */
+  --primary-hover: #1d4ed8;  /* blue-700 */
+
+  --input-bg: #ffffff;
+  --input-border: rgba(15, 23, 42, 0.18);
+  --input-text: #0f172a;
+  --placeholder: rgba(100, 116, 139, 0.75);
+  --ring: rgba(37, 99, 235, 0.35);
+
+  --shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+/* Dark */
+.dark:root {
+  --bg: #020617;        /* slate-950 */
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.12);
+
+  --text: #f8fafc;      /* slate-50 */
+  --muted: #94a3b8;     /* slate-400 */
+
+  --primary: #60a5fa;        /* blue-400 */
+  --primary-hover: #3b82f6;  /* blue-500 */
+
+  --input-bg: rgba(255, 255, 255, 0.06);
+  --input-border: rgba(255, 255, 255, 0.14);
+  --input-text: #f8fafc;
+  --placeholder: rgba(148, 163, 184, 0.8);
+  --ring: rgba(96, 165, 250, 0.40);
+
+  --shadow: 0 12px 30px rgba(0,0,0,0.35);
+}
+
+/* Optional: make body follow tokens (recommended) */
+body {
+  background: var(--bg);
+  color: var(--text);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* =========================
+   Components / Utilities
+   ========================= */
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* PRIMARY BUTTON */
+.btn-primary {
+  padding-left: 1rem;   /* px-4 */
+  padding-right: 1rem;
+  padding-top: 0.5rem;  /* py-2 */
+  padding-bottom: 0.5rem;
+  border-radius: 0.75rem;     /* more SaaS-y than md */
+  font-weight: 600;
+  background-color: var(--primary);
+  color: #fff;
+  transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  box-shadow: var(--shadow);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.btn-primary:active {
+  transform: scale(0.99);
+}
+
+/* INPUT */
+.input {
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.875rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--input-text);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.input::placeholder {
+  color: var(--placeholder);
+}
+
+.input:focus {
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* CARD */
+.card {
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+}
+
+/* Optional subtle panel surface (handy for sections) */
+.panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+
+
+@keyframes wiggle {
+  0%,100% { transform: rotate(0deg) translateY(0); }
+  15% { transform: rotate(-8deg) translateY(-1px); }
+  30% { transform: rotate(8deg) translateY(-1px); }
+  45% { transform: rotate(-6deg) translateY(0); }
+  60% { transform: rotate(6deg) translateY(0); }
+  75% { transform: rotate(-3deg) translateY(0); }
+}
+
+.hover-wiggle:hover { animation: wiggle 450ms ease-in-out; }
+
+
+@keyframes pop {
+  from { transform: translateY(10px) scale(.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Gold coin look (circular, shiny) */
+.coin {
+  position: absolute;
+  width: var(--size, 16px);
+  height: var(--size, 16px);
+  border-radius: 9999px;
+
+  /* golden gradient */
+  background: radial-gradient(circle at 30% 30%, #fff6b0 0%, #f7d25c 25%, #d4a017 60%, #8a6a00 100%);
+  box-shadow: 0 10px 18px rgba(0,0,0,.18);
+  border: 1px solid rgba(255, 215, 0, .55);
+
+  /* subtle rim */
+  outline: 1px solid rgba(0,0,0,.08);
+  outline-offset: -2px;
+
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* little shine line */
+.coin::before {
+  content: "";
+  position: absolute;
+  inset: 2px 3px auto auto;
+  width: 35%;
+  height: 35%;
+  border-radius: 9999px;
+  background: rgba(255,255,255,.55);
+  filter: blur(0.3px);
+}
+
+/* optional embossed mark */
+.coin::after {
+  content: "₹";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--size, 16px) * 0.55);
+  font-weight: 800;
+  color: rgba(70, 50, 0, .55);
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+}
+
+@keyframes coinFall {
+  0%   { transform: translate3d(var(--x, 0px), -40px, 0) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translate3d(var(--x, 0px), 110vh, 0) rotate(var(--rot, 720deg)); opacity: 0; }
+}
+
+/* respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .coin { animation: none !important; }
+}
