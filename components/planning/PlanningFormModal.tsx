@@ -54,17 +54,22 @@ type Props = {
 
     submitting: boolean;
     onSubmit: () => void;
+    onDeleteLine: (idx: number) => void;
 
     // ✅ edit-by-sales-order UI
     editSalesOrder: string;
     setEditSalesOrder: (v: string) => void;
     loadingSO: boolean;
-    onLoadSO: () => void | Promise<void>;
+    onLoadSO: (so?: string) => void | Promise<void>;
 
     editLot: string;
     setEditLot: (v: string) => void;
     loadingLot: boolean;
-    onLoadLot: () => void | Promise<void>;
+    onLoadLot: (lot?: string) => void | Promise<void>;
+
+    // derived options for edit mode
+    editSalesOrderOptions: any[];
+    editLotOptions: string[];
 };
 
 export default function PlanningFormModal({
@@ -82,6 +87,7 @@ export default function PlanningFormModal({
     emptyLine,
     submitting,
     onSubmit,
+    onDeleteLine,
     editSalesOrder,
     setEditSalesOrder,
     loadingSO,
@@ -90,6 +96,8 @@ export default function PlanningFormModal({
     setEditLot,
     loadingLot,
     onLoadLot,
+    editSalesOrderOptions,
+    editLotOptions,
 }: Props) {
     const isEditMode = mode === "edit";
 
@@ -258,41 +266,34 @@ export default function PlanningFormModal({
     {/* Sales order loader */}
     <div className="flex items-center gap-2">
       <label className="text-sm text-gray-700 dark:text-gray-200">Sales Order</label>
-      <input
-        className={clsManual}
-        placeholder="Enter Sales Order..."
+      <SalesOrderDropdown
         value={editSalesOrder}
-        onChange={(e) => setEditSalesOrder(e.target.value)}
+        options={editSalesOrderOptions}
+        onChange={(so) => {
+          setEditSalesOrder(so);
+          onLoadSO(so); // pass directly
+          setEditLot(""); // clear lot on SO change
+        }}
+        dropdownWidth={320}
+        dropdownMaxHeight={360}
+        placeholder="Select Sales Order..."
       />
-      <button
-        type="button"
-        onClick={() => onLoadSO()}
-        disabled={loadingSO}
-        className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800
-          dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 disabled:opacity-60"
-      >
-        {loadingSO ? "Loading..." : "Load"}
-      </button>
     </div>
 
     {/* ✅ Lot loader */}
     <div className="flex items-center gap-2">
       <label className="text-sm text-gray-700 dark:text-gray-200">Lot</label>
-      <input
-        className={clsManual}
-        placeholder="Enter Lot..."
+      <SearchableDropdown
         value={editLot}
-        onChange={(e) => setEditLot(e.target.value)}
+        options={editLotOptions}
+        onChange={(lot) => {
+          setEditLot(lot);
+          onLoadLot(lot); // pass directly
+        }}
+        dropdownWidth={320}
+        dropdownMaxHeight={360}
+        placeholder="Select Lot..."
       />
-      <button
-        type="button"
-        onClick={() => onLoadLot()}
-        disabled={loadingLot}
-        className="rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800
-          dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 disabled:opacity-60"
-      >
-        {loadingLot ? "Loading..." : "Load"}
-      </button>
 
       <span className="ml-1 inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700
         dark:bg-amber-950/40 dark:text-amber-200">
@@ -349,7 +350,7 @@ export default function PlanningFormModal({
                                             <th className="p-3">Bags / बैग</th>
                                             <th className="p-3">Max / अधिकतम</th>
 
-                                            {!isEditMode && <th className="p-3">Action / एक्शन</th>}
+                                            <th className="p-3 text-center">Action / एक्शन</th>
                                         </tr>
                                     </thead>
 
@@ -451,50 +452,46 @@ export default function PlanningFormModal({
                                                     <td className="p-3">
                                                         <input
                                                             type="number"
-                                                            min={1}
+                                                            min={0}
                                                             className={clsManual}
-                                                            value={Number(line.bags_for_planning ?? '0') || ""}
+                                                            value={line.bags_for_planning ?? '0'}
                                                             disabled={!isEditMode && !line.total_bags}
                                                             onChange={(e) => handleBagsChange(idx, e.target.value)}
                                                         />
-                                                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                            Max: {Number(line.total_bags ?? 0)}
-                                                        </div>
-                                                    </td>
+                                                         <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                             Max: {Number(line.total_bags ?? 0)}
+                                                         </div>
+                                                     </td>
 
-                                                    <td className="p-3">
-                                                        <span className="inline-flex rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700
-                                             dark:bg-emerald-950/40 dark:text-emerald-200">
+                                                     <td className="p-3">
+                                                        <span className="inline-flex rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
                                                             {Number(line.total_bags ?? 0)}
                                                         </span>
                                                     </td>
 
-                                                    {!isEditMode && (
-                                                        <td className="p-3">
-                                                            <div className="inline-flex gap-2">
+                                                    <td className="p-3 text-center">
+                                                        <div className="inline-flex gap-2">
+                                                            {!isEditMode && (
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => duplicateRow(idx)}
-                                                                    className="inline-flex items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-gray-700 shadow-sm hover:bg-gray-50
-          dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                                                                     title="Duplicate row"
                                                                 >
                                                                     <DuplicateIcon />
                                                                 </button>
+                                                            )}
 
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeRow(idx)}
-                                                                    disabled={lines.length === 1}
-                                                                    className="inline-flex items-center justify-center rounded-xl border border-gray-200 px-3 py-2 text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50
-          dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                                                                    title="Delete row"
-                                                                >
-                                                                    <TrashIcon />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onDeleteLine(idx)}
+                                                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 text-red-600 shadow-sm hover:bg-red-50 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-900/40"
+                                                                title={isEditMode ? "Delete Record Permanently" : "Remove Row"}
+                                                            >
+                                                                <TrashIcon />
+                                                            </button>
+                                                        </div>
+                                                    </td>
 
 
                                                 </motion.tr>

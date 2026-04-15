@@ -6,6 +6,7 @@ import {
   fetchPlanningBySalesOrder,
   fetchPlanningByLot,
   updatePlanningRowsByRowNumber,
+  deletePlanningRow,
 } from "@/lib/planningSheet";
 
 export const runtime = "nodejs";
@@ -132,9 +133,9 @@ export async function POST(req: Request) {
           { ok: false, message: `Row ${rowNo}: Max is 0` },
           { status: 400 },
         );
-      if (!(bags > 0))
+      if (!(bags >= 0))
         return NextResponse.json(
-          { ok: false, message: `Row ${rowNo}: Bags must be > 0` },
+          { ok: false, message: `Row ${rowNo}: Bags cannot be negative` },
           { status: 400 },
         );
       if (bags > max) {
@@ -223,6 +224,30 @@ export async function PUT(req: Request) {
     console.error("PUT /api/planned-data error:", err);
     return NextResponse.json(
       { ok: false, message: err?.message || "Failed to update planning" },
+      { status: 500 },
+    );
+  }
+}
+
+// ✅ DELETE: delete row by rowNumber
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const rowNumber = Number(searchParams.get("rowNumber"));
+
+    if (!(rowNumber >= 2)) {
+      return NextResponse.json(
+        { ok: false, message: "Invalid rowNumber" },
+        { status: 400 },
+      );
+    }
+
+    const result = await deletePlanningRow(rowNumber);
+    return NextResponse.json(result);
+  } catch (err: any) {
+    console.error("DELETE /api/planned-data error:", err);
+    return NextResponse.json(
+      { ok: false, message: err?.message || "Failed to delete row" },
       { status: 500 },
     );
   }

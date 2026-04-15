@@ -1,10 +1,11 @@
 // components/planning/PlanningWorkspace.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import type { SalesOrder, OutstandingData, PlanningLine } from "@/types";
-import { useAppSelector } from "@/store/hooks";
+import { useAppSelector, useAppDispatch } from "@/store/hooks";
+import { fetchPlannedData } from "@/store/slices/planningDataSlice";
 
 import LeftInventoryPanel from "./LeftInventoryPanel";
 import RightPanel from "./RightPanel";
@@ -61,11 +62,47 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
   // Planner select
   const [planner, setPlanner] = useState<string>(userName || "");
 
+  const dispatch = useAppDispatch();
+
+  // Load all planned data for edit dropdowns
+  const allPlannedData = useAppSelector((s: any) => s.planningData.items) as any[];
+
+  useEffect(() => {
+    dispatch(fetchPlannedData());
+  }, [dispatch]);
+
   // ✅ Edit by Sales Order
   const [editSalesOrder, setEditSalesOrder] = useState("");
   const [loadingSO, setLoadingSO] = useState(false);
   const [editLot, setEditLot] = useState("");
   const [loadingLot, setLoadingLot] = useState(false);
+
+  // Derive unique Sales Orders from planned data
+  const editSalesOrderOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    (allPlannedData ?? []).forEach((item: any) => {
+      const so = String(item.sales_order_no ?? "").trim();
+      const buyer = String(item.buyer_name ?? "").trim();
+      if (so && !map.has(so)) {
+        map.set(so, buyer);
+      }
+    });
+
+    return Array.from(map.entries()).map(([so, buyer]) => ({
+      sales_order: so,
+      buyer: buyer,
+    })).sort((a, b) => a.sales_order.localeCompare(b.sales_order));
+  }, [allPlannedData]);
+
+  // Derive Lots for the selected Sales Order
+  const editLotOptions = useMemo(() => {
+    if (!editSalesOrder) return [];
+    const lots = (allPlannedData ?? [])
+      .filter((item: any) => String(item.sales_order_no ?? "").trim() === editSalesOrder)
+      .map((item: any) => String(item.lot_no ?? "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(lots)).sort();
+  }, [allPlannedData, editSalesOrder]);
 
   // ----- Indexes -----
   const salesOrderIndex = useMemo(() => {
@@ -132,153 +169,157 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     setLoadingLot(false);
   }
 
-  // ✅ Load planning lines by Sales Order (edit flow)
-  async function loadPlanningBySalesOrder() {
-    const so = editSalesOrder.trim();
-    if (!so) {
-      toast.error("Sales Order enter karo");
+  // ✅ Load planning lines by Sales Order (edit flow) - NOW CLIENT SIDE
+  function loadPlanningBySalesOrder(soOverride?: string) {
+    const so = (soOverride ?? editSalesOrder).trim();
+    if (!so) return;
+
+    const tId = toast.loading("Loading planning (local)...");
+
+    // Filter local Redux state
+    const matches = (allPlannedData ?? []).filter((item: any) =>
+      String(item.sales_order_no ?? "").trim() === so
+    );
+
+    if (matches.length === 0) {
+      toast.dismiss(tId);
+      toast.error(`No entries found for Sales Order: ${so}`);
       return;
     }
 
-    setLoadingSO(true);
-    const tId = toast.loading("Loading planning...");
+    setEditSalesOrder(so);
+    setPlanner(String(matches[0]?.planning_submitted_by ?? ""));
 
-    try {
-      const url = new URL("/api/planned-data", window.location.origin);
-      url.searchParams.set("sales_order", so);
+    const buyerFromSO = salesOrderIndex.get(so)?.buyer ?? "";
 
-      const res = await fetch(url.toString(), { method: "GET" });
-      const data = await res.json().catch(() => ({}));
+    const normalized = matches.map((item: any) => {
+      const lot = String(item.lot_no ?? "").trim();
+      const wh = String(item.wh_name_lot_location ?? "").trim();
+      const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
 
-      console.log("SO : ", data)
+      return {
+        ...emptyLine(),
+        _rowNumber: item._rowNumber,
+        _uid: String(item.uid ?? ""),
+        sales_order: String(item.sales_order_no ?? so),
+        buyer: String(item.buyer_name ?? buyerFromSO ?? ""),
+        lot,
+        warehouse: wh,
+        quality: String(item.quality_name ?? ""),
+        bags_for_planning: Number(item.number_of_planned_bags ?? 0),
+        total_bags: max,
+      };
+    });
 
-      if (!res.ok || data?.ok === false) {
-        toast.dismiss(tId);
-        toast.error(data?.message || "Sales Order not found / load failed");
-        return;
-      }
-
-      setEditSalesOrder(so);
-      setPlanner(data?.planner ?? "");
-
-      const buyerFromSO = salesOrderIndex.get(so)?.buyer ?? "";
-
-      const loaded: any[] = Array.isArray(data?.lines) ? data.lines : [];
-
-      const normalized = (loaded.length ? loaded : [emptyLine()]).map((ln: any) => {
-        // const lot = String(ln.lot ?? "");
-        // const wh = String(ln.warehouse ?? "");
-
-
-        const lot = String(ln.lot ?? "").trim();
-        const wh = String(ln.warehouse ?? ln.warehouse_location ?? "").trim();
-
-        const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
-
-
-        // ✅ compute max from outstanding
-        // const max = (outstandingData ?? []).reduce((s: number, r: any) => {
-        //   return String(r.lot_no) === lot && String(r.warehouse_location) === wh
-        //     ? s + Number(r.outstanding_stock ?? 0)
-        //     : s;
-        // }, 0);
-
-        return {
-          ...emptyLine(), // ✅ ensures missing keys exist
-          ...ln,
-          sales_order: String(ln.sales_order ?? so), // ✅ force SO (key fix)
-          buyer: String(ln.buyer ?? buyerFromSO ?? ""), // ✅ autofill buyer
-          lot,
-          warehouse: wh,
-          total_bags: max,
-          // ✅ safety clamp
-          bags_for_planning: Math.min(Number(ln.bags_for_planning ?? 0), max || Number.MAX_SAFE_INTEGER),
-        };
-      });
-
-      setLines(normalized);
-
-      toast.dismiss(tId);
-      toast.success(`Loaded Sales Order: ${so}`);
-    } catch (e: any) {
-      toast.dismiss(tId);
-      toast.error(e?.message || "Network error");
-    } finally {
-      setLoadingSO(false);
-    }
+    setLines(normalized);
+    toast.dismiss(tId);
+    toast.success(`Loaded ${matches.length} rows for SO ${so}`);
   }
 
-  // ✅ Load planning lines by Lot (edit flow)
-  async function loadPlanningByLot() {
-    const lotInput = editLot.trim();
-    if (!lotInput) {
-      toast.error("Lot enter karo");
+  // ✅ Load planning lines by Lot (edit flow) - NOW CLIENT SIDE
+  function loadPlanningByLot(lotOverride?: string) {
+    const lotInput = (lotOverride ?? editLot).trim();
+    if (!lotInput) return;
+
+    const tId = toast.loading("Loading planning (local)...");
+
+    // Filter local Redux state
+    const matches = (allPlannedData ?? []).filter((item: any) =>
+      String(item.lot_no ?? "").trim() === lotInput
+    );
+
+    if (matches.length === 0) {
+      toast.dismiss(tId);
+      toast.error(`No entries found for Lot: ${lotInput}`);
       return;
     }
 
-    setLoadingLot(true);
-    const tId = toast.loading("Loading planning (lot)...");
+    setEditLot(lotInput);
+    const so = String(matches[0]?.sales_order_no ?? "").trim();
+    if (so) setEditSalesOrder(so);
+    setPlanner(String(matches[0]?.planning_submitted_by ?? ""));
+
+    const buyerFromSO = so ? (salesOrderIndex.get(so)?.buyer ?? "") : "";
+
+    const normalized = matches.map((item: any) => {
+      const lot = String(item.lot_no ?? "").trim();
+      const wh = String(item.wh_name_lot_location ?? "").trim();
+      const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
+
+      return {
+        ...emptyLine(),
+        _rowNumber: item._rowNumber,
+        _uid: String(item.uid ?? ""),
+        sales_order: String(item.sales_order_no ?? so),
+        buyer: String(item.buyer_name ?? buyerFromSO ?? ""),
+        lot,
+        warehouse: wh,
+        quality: String(item.quality_name ?? ""),
+        bags_for_planning: Number(item.number_of_planned_bags ?? 0),
+        total_bags: max,
+      };
+    });
+
+    setLines(normalized);
+    toast.dismiss(tId);
+    toast.success(`Loaded ${matches.length} rows for Lot ${lotInput}`);
+  }
+
+  // ✅ Handle row deletion (Local or Permanent)
+  async function handleDeletePlanningLine(idx: number) {
+    const line = lines[idx];
+    const isEditMode = planningMode === "edit";
+
+    // 1. Create mode: just remove from state
+    if (!isEditMode) {
+      setLines((prev) => (prev.length === 1 ? [emptyLine()] : prev.filter((_, i) => i !== idx)));
+      return;
+    }
+
+    // 2. Edit mode: Permanent deletion from Sheets
+    const rowNumber = (line as any)._rowNumber;
+    if (!rowNumber) {
+      // Safety: if row number is missing, just remove from UI
+      setLines((prev) => (prev.length === 1 ? [emptyLine()] : prev.filter((_, i) => i !== idx)));
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to PERMANENTLY delete this record?\n\n` +
+      `Sales Order: ${line.sales_order}\n` +
+      `Lot: ${line.lot}\n` +
+      `Bags: ${line.bags_for_planning}\n\n` +
+      `This action cannot be undone.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const tId = toast.loading("Deleting planning record...");
 
     try {
       const url = new URL("/api/planned-data", window.location.origin);
-      url.searchParams.set("lot", lotInput);
+      url.searchParams.set("rowNumber", String(rowNumber));
 
-      const res = await fetch(url.toString(), { method: "GET" });
+      const res = await fetch(url.toString(), { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data?.ok === false) {
         toast.dismiss(tId);
-        toast.error(data?.message || "Lot not found / load failed");
+        toast.error(data?.message || "Delete failed");
         return;
       }
 
-      setEditLot(lotInput);
-
-      // If API returns planner / sales_order, sync them
-      if (data?.planner) setPlanner(String(data.planner));
-      if (data?.sales_order) setEditSalesOrder(String(data.sales_order));
-
-      const so = String(data?.sales_order ?? editSalesOrder ?? "").trim();
-      const buyerFromSO = so ? (salesOrderIndex.get(so)?.buyer ?? "") : "";
-
-      const loaded: any[] = Array.isArray(data?.lines) ? data.lines : [];
-
-      const normalized = (loaded.length ? loaded : [emptyLine()]).map((ln: any) => {
-        const lot = String(ln.lot ?? lotInput);
-        const wh = String(ln.warehouse ?? "");
-
-        const max = (outstandingData ?? []).reduce((s: number, r: any) => {
-          return String(r.lot_no) === lot && String(r.warehouse_location) === wh
-            ? s + Number(r.outstanding_stock ?? 0)
-            : s;
-        }, 0);
-
-        const finalSO = String(ln.sales_order ?? so ?? "");
-
-        return {
-          ...emptyLine(),
-          ...ln,
-          sales_order: finalSO,
-          buyer: String(ln.buyer ?? buyerFromSO ?? ""),
-          lot,
-          warehouse: wh,
-          total_bags: max,
-          bags_for_planning: Math.min(
-            Number(ln.bags_for_planning ?? 0),
-            max || Number.MAX_SAFE_INTEGER
-          ),
-        };
-      });
-
-      setLines(normalized);
-
       toast.dismiss(tId);
-      toast.success(`Loaded Lot: ${lotInput}`);
+      toast.success("Record deleted successfully");
+
+      // IMPORTANT: Refresh global data because all row numbers below the deleted one have shifted!
+      dispatch(fetchPlannedData());
+
+      // Remove from UI
+      const result = lines.filter((_, i) => i !== idx);
+      setLines(result.length ? result : [emptyLine()]);
+
     } catch (e: any) {
       toast.dismiss(tId);
-      toast.error(e?.message || "Network error");
-    } finally {
-      setLoadingLot(false);
+      toast.error(e?.message || "Network error during delete");
     }
   }
 
@@ -321,8 +362,8 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
         }
       }
 
-      if (!(bags > 0)) {
-        toast.error(`Row ${rowNo}: Bags must be > 0`);
+      if (!(bags >= 0)) {
+        toast.error(`Row ${rowNo}: Bags cannot be negative`);
         return;
       }
     }
@@ -363,6 +404,9 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
       setOpenPlanning(false);
       resetModalState();
       setPlanningMode("create");
+
+      // ✅ Refresh global data so client-side search is updated
+      dispatch(fetchPlannedData());
     } catch (err: any) {
       toast.dismiss(toastId);
       toast.error(err?.message || "Network error");
@@ -447,17 +491,20 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
         emptyLine={emptyLine}
         submitting={submitting}
         onSubmit={submitPlanning}
+        onDeleteLine={handleDeletePlanningLine}
         // ✅ now edit uses sales order
         editSalesOrder={editSalesOrder}
         setEditSalesOrder={setEditSalesOrder}
         loadingSO={loadingSO}
         onLoadSO={loadPlanningBySalesOrder}
+        editSalesOrderOptions={editSalesOrderOptions}
 
         // ✅ NEW: lot based edit load
         editLot={editLot}
         setEditLot={setEditLot}
         loadingLot={loadingLot}
         onLoadLot={loadPlanningByLot}
+        editLotOptions={editLotOptions}
       />
     </>
   );

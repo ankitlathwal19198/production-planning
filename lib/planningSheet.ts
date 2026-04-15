@@ -37,6 +37,18 @@ function normalizeHeader(key: string) {
     .replace(/^_+|_+$/g, "");
 }
 
+function indexToColLetter(idx0: number): string {
+  // 0 -> A, 25 -> Z, 26 -> AA ...
+  let n = idx0 + 1;
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
 export async function fetchSheetData<T = Record<string, any>>(
   range: string
 ): Promise<T[]> {
@@ -49,12 +61,22 @@ export async function fetchSheetData<T = Record<string, any>>(
   const [headers = [], ...rows] = (res.data.values ?? []) as string[][];
   const keys = headers.map(normalizeHeader);
 
-  return rows.map((row) =>
-    keys.reduce((acc, key, i) => {
+  // Determine starting row for _rowNumber index
+  // e.g. "Sheet!A1:J" -> data starts at row 2
+  // e.g. "Sheet!A5:J" -> data starts at row 6
+  let startRow = 1;
+  const match = range.match(/!.*?(\d+)/);
+  if (match) startRow = parseInt(match[1], 10);
+
+  return rows.map((row, idx) => {
+    const obj = keys.reduce((acc, key, i) => {
       (acc as any)[key] = parseValue(row[i] ?? "");
       return acc;
-    }, {} as T)
-  );
+    }, {} as any);
+
+    obj._rowNumber = startRow + idx + 1; // +1 if headers included, +idx
+    return obj as T;
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -153,8 +175,8 @@ export async function addPlanningEntries(
     }
 
     const bags = Number(ln.number_of_planned_bags ?? 0);
-    if (!(bags > 0)) {
-      throw new Error(`Row ${rowNo}: Planned bags must be > 0`);
+    if (!(bags >= 0)) {
+      throw new Error(`Row ${rowNo}: Planned bags cannot be negative`);
     }
   }
 
@@ -227,92 +249,131 @@ export type PlanningRowMatch = {
 
 /**
  * Fetch all planning rows for a given sales order number.
- * Reads A2:Z and filters by sales_order_no column (normalized header).
+ * HIGH PERFORMANCE: Two-step fetch strategy.
  */
 export async function fetchPlanningBySalesOrder(salesOrder: string): Promise<PlanningRowMatch[]> {
   const sheetId = process.env.Outstanding_AND_PLANNING_SHEET_ID!;
   const so = String(salesOrder ?? "").trim();
   if (!so) throw new Error("Sales order required");
 
-  // headers
+  // 1. Headers to find where sales_order_no is
   const headerKeys = await fetchPlanningSheetHeaders();
+  const soIdx = headerKeys.indexOf("sales_order_no");
+  if (soIdx === -1) throw new Error("sales_order_no column not found in sheet");
 
-  // all rows (A2:Z)
-  const res = await sheets.spreadsheets.values.get({
+  const colLetter = indexToColLetter(soIdx);
+
+  // 2. Fetch only that column
+  const colRes = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `${PLANNING_SHEET_NAME}!A2:Z`,
+    range: `${PLANNING_SHEET_NAME}!${colLetter}2:${colLetter}`,
   });
 
-  const rows = (res.data.values ?? []) as string[][];
+  const colValues = (colRes.data.values ?? []) as string[][];
+  const matchingRowNumbers: number[] = [];
 
+  for (let i = 0; i < colValues.length; i++) {
+    const val = String(colValues[i]?.[0] ?? "").trim();
+    if (val === so) {
+      matchingRowNumbers.push(i + 2); // A2 is start
+    }
+  }
+
+  if (matchingRowNumbers.length === 0) {
+    throw new Error("No entries found for this Sales Order");
+  }
+
+  // 3. Fetch full rows only for matches
+  const ranges = matchingRowNumbers.map(n => `${PLANNING_SHEET_NAME}!A${n}:J${n}`);
+  const batchRes = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: sheetId,
+    ranges,
+  });
+
+  const valueRanges = batchRes.data.valueRanges ?? [];
   const matches: PlanningRowMatch[] = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const rowNumber = i + 2; // A2 is first data row
-    const row = rows[i] ?? [];
+  for (let i = 0; i < valueRanges.length; i++) {
+    const row = (valueRanges[i].values?.[0] ?? []) as string[];
+    const rowNumber = matchingRowNumbers[i];
 
-    // build object
     const obj = headerKeys.reduce((acc, key, idx) => {
       (acc as any)[key] = parseValue(String(row[idx] ?? ""));
       return acc;
     }, {} as Record<string, any>);
 
-    // match sales order
-    const soVal = String(obj.sales_order_no ?? "").trim();
-    if (soVal === so) {
-      matches.push({
-        rowNumber,
-        uid: String(obj.uid ?? "").trim(),
-        data: obj,
-      });
-    }
+    matches.push({
+      rowNumber,
+      uid: String(obj.uid ?? "").trim(),
+      data: obj,
+    });
   }
-
-  if (!matches.length) throw new Error("No entries found for this Sales Order");
 
   return matches;
 }
 
+/**
+ * Fetch all planning rows for a given Lot number.
+ * HIGH PERFORMANCE: Two-step fetch strategy.
+ */
 export async function fetchPlanningByLot(lot: string): Promise<PlanningRowMatch[]> {
   const sheetId = process.env.Outstanding_AND_PLANNING_SHEET_ID!;
-  const so = String(lot ?? "").trim();
-  if (!so) throw new Error("Lot required");
+  const lVal = String(lot ?? "").trim();
+  if (!lVal) throw new Error("Lot required");
 
-  // headers
+  // 1. Headers to find where lot_no is
   const headerKeys = await fetchPlanningSheetHeaders();
+  const lotIdx = headerKeys.indexOf("lot_no");
+  if (lotIdx === -1) throw new Error("lot_no column not found in sheet");
 
-  // all rows (A2:Z)
-  const res = await sheets.spreadsheets.values.get({
+  const colLetter = indexToColLetter(lotIdx);
+
+  // 2. Fetch only that column
+  const colRes = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `${PLANNING_SHEET_NAME}!A2:Z`,
+    range: `${PLANNING_SHEET_NAME}!${colLetter}2:${colLetter}`,
   });
 
-  const rows = (res.data.values ?? []) as string[][];
+  const colValues = (colRes.data.values ?? []) as string[][];
+  const matchingRowNumbers: number[] = [];
 
+  for (let i = 0; i < colValues.length; i++) {
+    const val = String(colValues[i]?.[0] ?? "").trim();
+    if (val === lVal) {
+      matchingRowNumbers.push(i + 2);
+    }
+  }
+
+  if (matchingRowNumbers.length === 0) {
+    throw new Error("No entries found for this Lot");
+  }
+
+  // 3. Fetch full rows only for matches
+  const ranges = matchingRowNumbers.map(n => `${PLANNING_SHEET_NAME}!A${n}:J${n}`);
+  const batchRes = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: sheetId,
+    ranges,
+  });
+
+  const valueRanges = batchRes.data.valueRanges ?? [];
   const matches: PlanningRowMatch[] = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const rowNumber = i + 2; // A2 is first data row
-    const row = rows[i] ?? [];
+  for (let i = 0; i < valueRanges.length; i++) {
+    const row = (valueRanges[i].values?.[0] ?? []) as string[];
+    const rowNumber = matchingRowNumbers[i];
 
-    // build object
     const obj = headerKeys.reduce((acc, key, idx) => {
       (acc as any)[key] = parseValue(String(row[idx] ?? ""));
       return acc;
     }, {} as Record<string, any>);
 
-    // match lot_no
-    const soVal = String(obj.lot_no ?? "").trim();
-    if (soVal === so) {
-      matches.push({
-        rowNumber,
-        uid: String(obj.uid ?? "").trim(),
-        data: obj,
-      });
-    }
+    matches.push({
+      rowNumber,
+      uid: String(obj.uid ?? "").trim(),
+      data: obj,
+    });
   }
 
-  if (!matches.length) throw new Error("No entries found for this Lot");
   return matches;
 }
 
@@ -383,7 +444,7 @@ export async function updatePlanningRowsByRowNumber(
     }
 
     const bags = Number(r.number_of_planned_bags ?? 0);
-    if (!(bags > 0)) throw new Error(`Row ${i + 1}: Bags must be > 0`);
+    if (!(bags >= 0)) throw new Error(`Row ${i + 1}: Bags cannot be negative`);
 
     // Build object in normalized header keys
     const obj: Record<string, any> = {
@@ -416,4 +477,51 @@ export async function updatePlanningRowsByRowNumber(
   });
 
   return { ok: true, updated: rowsToUpdate.length, updatedRowNumbers };
+}
+
+/**
+ * Delete a specific row from the Planning sheet.
+ * DANGER: This is permanent.
+ */
+export async function deletePlanningRow(rowNumber: number): Promise<{ ok: true; deletedRow: number }> {
+  const spreadsheetId = process.env.Outstanding_AND_PLANNING_SHEET_ID!;
+
+  if (!(rowNumber >= 2)) {
+    throw new Error(`Invalid rowNumber: ${rowNumber}. Cannot delete header or non-existent row.`);
+  }
+
+  // 1. Get spreadsheet metadata to find the internal sheetId for the tab name
+  const ss = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheet = ss.data.sheets?.find(
+    (s) => s.properties?.title === PLANNING_SHEET_NAME
+  );
+
+  if (!sheet || sheet.properties?.sheetId === undefined) {
+    throw new Error(`Sheet "${PLANNING_SHEET_NAME}" not found or has no sheetId.`);
+  }
+
+  const sheetInternalId = sheet.properties.sheetId;
+
+  // 2. Execute deleteDimension request
+  // startIndex is 0-indexed and inclusive, endIndex is exclusive.
+  // Row 2 -> index 1.
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: sheetInternalId,
+              dimension: "ROWS",
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  return { ok: true, deletedRow: rowNumber };
 }

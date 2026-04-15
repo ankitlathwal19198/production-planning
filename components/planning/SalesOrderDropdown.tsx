@@ -16,12 +16,14 @@ export default function SalesOrderDropdown({
   onChange,
   dropdownWidth = 520,
   dropdownMaxHeight = 320,
+  placeholder = "Select...",
 }: {
   value: string;
-  options: SalesOrder[];
+  options: any[]; // Changed from SalesOrder[] to any[] for flexibility
   onChange: (so: string) => void;
   dropdownWidth?: number;
   dropdownMaxHeight?: number;
+  placeholder?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -222,7 +224,7 @@ export default function SalesOrderDropdown({
             </div>
           </div>
         ) : (
-          <span className="text-gray-500 dark:text-gray-400">Select...</span>
+          <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>
         )}
       </button>
 
