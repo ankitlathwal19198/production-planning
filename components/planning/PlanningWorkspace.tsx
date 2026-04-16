@@ -94,15 +94,13 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     })).sort((a, b) => a.sales_order.localeCompare(b.sales_order));
   }, [allPlannedData]);
 
-  // Derive Lots for the selected Sales Order
+  // Derive Lots. Always show all available lots for independent search.
   const editLotOptions = useMemo(() => {
-    if (!editSalesOrder) return [];
     const lots = (allPlannedData ?? [])
-      .filter((item: any) => String(item.sales_order_no ?? "").trim() === editSalesOrder)
       .map((item: any) => String(item.lot_no ?? "").trim())
       .filter(Boolean);
     return Array.from(new Set(lots)).sort();
-  }, [allPlannedData, editSalesOrder]);
+  }, [allPlannedData]);
 
   // ----- Indexes -----
   const salesOrderIndex = useMemo(() => {
@@ -192,6 +190,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     setLoadingLot(false);
   }
 
+  // ✅ Load planning lines by Sales Order AND/OR Lot (edit flow) - NOW CLIENT SIDE
   // ✅ Load planning lines by Sales Order (edit flow) - NOW CLIENT SIDE
   function loadPlanningBySalesOrder(soOverride?: string) {
     const so = (soOverride ?? editSalesOrder).trim();
@@ -517,14 +516,13 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
         submitting={submitting}
         onSubmit={submitPlanning}
         onDeleteLine={handleDeletePlanningLine}
-        // ✅ now edit uses sales order
+        // ✅ Edit mode handlers
         editSalesOrder={editSalesOrder}
         setEditSalesOrder={setEditSalesOrder}
         loadingSO={loadingSO}
         onLoadSO={loadPlanningBySalesOrder}
         editSalesOrderOptions={editSalesOrderOptions}
 
-        // ✅ NEW: lot based edit load
         editLot={editLot}
         setEditLot={setEditLot}
         loadingLot={loadingLot}
