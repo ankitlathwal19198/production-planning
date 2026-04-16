@@ -176,7 +176,7 @@ export default function PlanningFormModal({
             lot: "",
             warehouse: "",
             total_bags: 0,
-            bags_for_planning: 0,
+            bags_for_planning: "",
         });
     }
 
@@ -187,23 +187,28 @@ export default function PlanningFormModal({
             quality: q,
             warehouse: "",
             total_bags: 0,
-            bags_for_planning: 0,
+            bags_for_planning: "",
         });
     }
 
     function handleWarehouseChange(idx: number, wh: string) {
         const lot = lines[idx]?.lot ?? "";
         const max = getOutstanding(outstandingData as any, lot, wh);
-        const currentBags = Number(lines[idx]?.bags_for_planning ?? 0);
+        const currentVal = lines[idx]?.bags_for_planning;
+        const nextBags = currentVal === "" ? "" : Math.min(Number(currentVal ?? 0), max);
         patchLine(idx, {
             warehouse: wh,
             total_bags: max,
-            bags_for_planning: Math.min(currentBags, max),
+            bags_for_planning: nextBags,
         });
     }
 
     function handleBagsChange(idx: number, val: string) {
-        const n = Number(val || 0);
+        if (val === "") {
+            patchLine(idx, { bags_for_planning: "" });
+            return;
+        }
+        const n = Number(val);
         patchLine(idx, { bags_for_planning: n < 0 ? 0 : n });
     }
 
@@ -454,7 +459,7 @@ export default function PlanningFormModal({
                                                             type="number"
                                                             min={0}
                                                             className={clsManual}
-                                                            value={line.bags_for_planning ?? '0'}
+                                                            value={line.bags_for_planning ?? ""}
                                                             disabled={!isEditMode && !line.total_bags}
                                                             onChange={(e) => handleBagsChange(idx, e.target.value)}
                                                         />

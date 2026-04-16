@@ -71,7 +71,7 @@ export type PlanningLine = {
   lot: string;
   quality: string;
   warehouse: string;
-  bags_for_planning: number;
+  bags_for_planning: number | string;
   total_bags: number;
 };
 

@@ -28,7 +28,7 @@ const emptyLine = (): PlanningLine => ({
   lot: "",
   quality: "",
   warehouse: "",
-  bags_for_planning: 0,
+  bags_for_planning: "",
   total_bags: 0,
 });
 
