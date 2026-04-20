@@ -152,6 +152,8 @@ export type AddPlanningResult = {
   newRows: string[][]; // A:J rows appended
 };
 
+let planningLock = Promise.resolve();
+
 /**
  * Appends planning rows to "Planned Stock Backend" sheet (A:J).
  * Auto-generates sequential UID like 6069/PL...
@@ -159,82 +161,94 @@ export type AddPlanningResult = {
 export async function addPlanningEntries(
   lines: AddPlanningLine[]
 ): Promise<AddPlanningResult> {
-  const sheetId = process.env.Outstanding_AND_PLANNING_SHEET_ID!;
-
-  if (!Array.isArray(lines) || lines.length === 0) {
-    throw new Error("No planning rows provided");
-  }
-
-  // minimal validation on server side
-  for (let i = 0; i < lines.length; i++) {
-    const rowNo = i + 1;
-    const ln = lines[i];
-
-    if (!ln.sales_order_no || !ln.lot_no || !ln.wh_name_lot_location) {
-      throw new Error(`Row ${rowNo}: Sales Order / Lot / Warehouse required`);
-    }
-
-    const bags = Number(ln.number_of_planned_bags ?? 0);
-    if (!(bags >= 0)) {
-      throw new Error(`Row ${rowNo}: Planned bags cannot be negative`);
-    }
-  }
-
-  // ✅ get headers dynamically
-  const headerKeys = await fetchPlanningSheetHeaders();
-  const lastUid = await fetchLastPlanningUidNumber();
-
-  function formatDateForSheet(date: Date) {
-    // United Kingdom locale → dd/mm/yyyy, 24-hour time
-    return date.toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  }
-
-  /**
-   * Payload object keys MUST match normalizeHeader(sheet headers)
-   */
-  const rowsAsObjects = lines.map((ln, idx) => ({
-    uid: `${lastUid + idx + 1}/PL`,
-    timestamp: formatDateForSheet(new Date()),
-    sales_order_no: ln.sales_order_no,
-    buyer_name: ln.buyer_name,
-    lot_no: ln.lot_no,
-    quality_name: ln.quality_name,
-    wh_name_lot_location: ln.wh_name_lot_location,
-    number_of_planned_bags: ln.number_of_planned_bags,
-    plant_name: ln.plant_name,
-    planning_submitted_by: ln.planning_submitted_by,
-  }));
-
-  /**
-   * Convert objects → array in SHEET HEADER ORDER
-   */
-  const values: string[][] = rowsAsObjects.map((obj) =>
-    headerKeys.map((key) => String((obj as any)[key] ?? ""))
-  );
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: sheetId,
-    range: `${PLANNING_SHEET_NAME}!A:Z`,
-    valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values },
+  // Serialize execution to prevent duplicate UID generation from concurrent requests
+  const currentLock = planningLock;
+  let resolveLock: () => void;
+  planningLock = new Promise((resolve) => {
+    resolveLock = resolve;
   });
 
-  return {
-    ok: true,
-    appended: lines.length,
-    uidFrom: `${lastUid + 1}/PL`,
-    uidTo: `${lastUid + lines.length}/PL`,
-    newRows: values,
-  };
+  try {
+    await currentLock;
+    const sheetId = process.env.Outstanding_AND_PLANNING_SHEET_ID!;
+
+    if (!Array.isArray(lines) || lines.length === 0) {
+      throw new Error("No planning rows provided");
+    }
+
+    // minimal validation on server side
+    for (let i = 0; i < lines.length; i++) {
+      const rowNo = i + 1;
+      const ln = lines[i];
+
+      if (!ln.sales_order_no || !ln.lot_no || !ln.wh_name_lot_location) {
+        throw new Error(`Row ${rowNo}: Sales Order / Lot / Warehouse required`);
+      }
+
+      const bags = Number(ln.number_of_planned_bags ?? 0);
+      if (!(bags >= 0)) {
+        throw new Error(`Row ${rowNo}: Planned bags cannot be negative`);
+      }
+    }
+
+    // ✅ get headers dynamically
+    const headerKeys = await fetchPlanningSheetHeaders();
+    const lastUid = await fetchLastPlanningUidNumber();
+
+    function formatDateForSheet(date: Date) {
+      // United Kingdom locale → dd/mm/yyyy, 24-hour time
+      return date.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+
+    /**
+     * Payload object keys MUST match normalizeHeader(sheet headers)
+     */
+    const rowsAsObjects = lines.map((ln, idx) => ({
+      uid: `${lastUid + idx + 1}/PL`,
+      timestamp: formatDateForSheet(new Date()),
+      sales_order_no: ln.sales_order_no,
+      buyer_name: ln.buyer_name,
+      lot_no: ln.lot_no,
+      quality_name: ln.quality_name,
+      wh_name_lot_location: ln.wh_name_lot_location,
+      number_of_planned_bags: ln.number_of_planned_bags,
+      plant_name: ln.plant_name,
+      planning_submitted_by: ln.planning_submitted_by,
+    }));
+
+    /**
+     * Convert objects → array in SHEET HEADER ORDER
+     */
+    const values: string[][] = rowsAsObjects.map((obj) =>
+      headerKeys.map((key) => String((obj as any)[key] ?? ""))
+    );
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: `${PLANNING_SHEET_NAME}!A:Z`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values },
+    });
+
+    return {
+      ok: true,
+      appended: lines.length,
+      uidFrom: `${lastUid + 1}/PL`,
+      uidTo: `${lastUid + lines.length}/PL`,
+      newRows: values,
+    };
+  } finally {
+    resolveLock!();
+  }
 }
 
 /* ------------------------------------------------------------------ */
