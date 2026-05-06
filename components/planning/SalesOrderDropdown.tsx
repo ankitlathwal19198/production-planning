@@ -45,8 +45,8 @@ export default function SalesOrderDropdown({
     const out: SalesOrder[] = [];
 
     for (const x of options ?? []) {
-      const so = toStr((x as any).sales_order).trim();
-      const buyer = toStr((x as any).buyer).trim();
+      const so = toStr((x as any).sales_order || (x as any).sales_order_no).trim();
+      const buyer = toStr((x as any).buyer || (x as any).buyer_name).trim();
       const key = `${so}__${buyer}`; // unique key
 
       if (!so) continue; // optional: skip blank SOs
@@ -62,7 +62,9 @@ export default function SalesOrderDropdown({
   // ✅ selectedObj match also string-safe (now from uniqueOptions)
   const selectedObj = useMemo(() => {
     const v = toStr(value).trim();
-    return (uniqueOptions ?? []).find((x) => toStr((x as any).sales_order).trim() === v);
+    return (uniqueOptions ?? []).find((x) => 
+      toStr((x as any).sales_order || (x as any).sales_order_no).trim() === v
+    );
   }, [uniqueOptions, value]);
 
   // ✅ filter only by sales_order OR buyer (brand/desc removed)
@@ -173,7 +175,7 @@ export default function SalesOrderDropdown({
                         type="button"
                         whileHover={{ scale: 1.01 }}
                         onClick={() => {
-                          const so = toStr(x.sales_order);
+                          const so = toStr((x as any).sales_order || (x as any).sales_order_no);
                           onChange(so);
                           setOpen(false);
                           setQ(so);
@@ -218,9 +220,9 @@ export default function SalesOrderDropdown({
       >
         {selectedObj ? (
           <div className="truncate">
-            <div className="font-medium">{toStr((selectedObj as any).sales_order)}</div>
+            <div className="font-medium">{toStr((selectedObj as any).sales_order || (selectedObj as any).sales_order_no)}</div>
             <div className="text-xs text-gray-500 truncate dark:text-gray-400">
-              {toStr((selectedObj as any).buyer)}
+              {toStr((selectedObj as any).buyer || (selectedObj as any).buyer_name)}
             </div>
           </div>
         ) : (

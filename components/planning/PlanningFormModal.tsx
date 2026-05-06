@@ -171,7 +171,7 @@ export default function PlanningFormModal({
 
         patchLine(idx, {
             sales_order: key,
-            buyer: String((soObj as any)?.buyer ?? ""),
+            buyer: String((soObj as any)?.buyer ?? (soObj as any)?.buyer_name ?? ""),
             quality: "",
             lot: "",
             warehouse: "",

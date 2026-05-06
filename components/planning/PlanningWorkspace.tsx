@@ -103,20 +103,11 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
   }, [allPlannedData]);
 
   // ----- Indexes -----
-  const salesOrderIndex = useMemo(() => {
-    const m = new Map<string, SalesOrder>();
-    for (const so of salesOrderData ?? []) {
-      m.set(String(so.sales_order ?? "").trim(), so);
-    }
-    return m;
-  }, [salesOrderData]);
-
   const salesOrderOptions = useMemo(() => {
     // 1. Get all active SO strings for lookup
     const activeSOStrings = new Set(
       (salesOrderData ?? []).map((so: any) => String(so.sales_order ?? so.sales_order_no ?? "").trim())
     );
-    
 
     // 2. Create merged list starting with active data
     const merged = [...(salesOrderData ?? [])];
@@ -132,6 +123,15 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
 
     return merged;
   }, [salesOrderData, lines]);
+
+  const salesOrderIndex = useMemo(() => {
+    const m = new Map<string, SalesOrder>();
+    for (const so of salesOrderOptions ?? []) {
+      const key = String(so.sales_order ?? (so as any).sales_order_no ?? "").trim();
+      if (key) m.set(key, so);
+    }
+    return m;
+  }, [salesOrderOptions]);
 
 
   const outstandingIndex = useMemo(() => {
@@ -213,7 +213,8 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     setEditSalesOrder(so);
     setPlanner(String(matches[0]?.planning_submitted_by ?? ""));
 
-    const buyerFromSO = salesOrderIndex.get(so)?.buyer ?? "";
+    const soItem = salesOrderIndex.get(so) as any;
+    const buyerFromSO = soItem?.buyer ?? soItem?.buyer_name ?? "";
 
     const normalized = matches.map((item: any) => {
       const lot = String(item.lot_no ?? item.lot_number ?? item.lot ?? "").trim();
@@ -263,7 +264,8 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     if (so) setEditSalesOrder(so);
     setPlanner(String(matches[0]?.planning_submitted_by ?? ""));
 
-    const buyerFromSO = so ? (salesOrderIndex.get(so)?.buyer ?? "") : "";
+    const soItem = so ? (salesOrderIndex.get(so) as any) : null;
+    const buyerFromSO = soItem?.buyer ?? soItem?.buyer_name ?? "";
 
     const normalized = matches.map((item: any) => {
       const lot = String(item.lot_no ?? "").trim();
