@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { isDetailedEntryRow } from "@/lib/stock";
 
 const base64Credentials = process.env.GOOGLE_CREDENTIALS || "";
 const credentials = JSON.parse(
@@ -83,11 +84,15 @@ export async function fetchOutstanding9Cols(): Promise<
       obj[keys[c] || `col_${c}`] = parseValue(cell);
     }
 
-    // Apps Script jaisa filter: AC != 0  (AC is last selected column)
+    // Apps Script jaisa filter: AC != 0  (AC is last selected column).
+    // Except a "See Detailed Entry" row at exactly 0: that 0 is the lot's balance
+    // in that godown. Dropping it leaves only the truck row, which can be deeply
+    // negative (Lot 21 at Hindustan Agro showed -1992 for a real 0).
     const acKey = keys[8];
     const acVal = obj[acKey];
     const acNum = typeof acVal === "number" ? acVal : Number(acVal);
-    if (Number.isNaN(acNum) || acNum === 0) continue;
+    const keepZero = isDetailedEntryRow(obj) && String(obj[keys[0]] ?? "").trim() !== "";
+    if (acVal === "" || Number.isNaN(acNum) || (acNum === 0 && !keepZero)) continue;
 
     out.push(obj);
   }

@@ -130,7 +130,7 @@ export async function POST(req: Request) {
 
       if (!(max > 0))
         return NextResponse.json(
-          { ok: false, message: `Row ${rowNo}: Max is 0` },
+          { ok: false, message: `Row ${rowNo}: no stock to plan (Max ${max})` },
           { status: 400 },
         );
       if (!(bags >= 0))

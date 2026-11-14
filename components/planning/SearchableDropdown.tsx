@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useLayoutEffect, useEffect } from "react";
+import { useMemo, useRef, useState, useLayoutEffect, useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -16,6 +16,7 @@ export default function SearchableDropdown({
     disabled = false,
     dropdownWidth = 360,
     dropdownMaxHeight = 320,
+    hints,
 }: {
     value: string;
     options: string[];
@@ -25,6 +26,8 @@ export default function SearchableDropdown({
     disabled?: boolean;
     dropdownWidth?: number;
     dropdownMaxHeight?: number;
+    /** Optional note shown at the right of an option, keyed by the option's text. */
+    hints?: Record<string, ReactNode>;
 }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -153,7 +156,12 @@ export default function SearchableDropdown({
                                         className="w-full border-b border-gray-100 px-3 py-2 text-left
                                  hover:bg-indigo-50/40 dark:border-gray-800 dark:hover:bg-gray-800/60"
                                     >
-                                        <div className="font-medium text-gray-900 dark:text-gray-100">{toStr(x)}</div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="font-medium text-gray-900 dark:text-gray-100">{toStr(x)}</span>
+                                            {hints?.[toStr(x)] != null ? (
+                                                <span className="shrink-0 text-xs">{hints[toStr(x)]}</span>
+                                            ) : null}
+                                        </div>
                                     </motion.button>
                                 ))
                             )}

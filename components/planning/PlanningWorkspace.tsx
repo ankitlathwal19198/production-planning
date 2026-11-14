@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import type { SalesOrder, OutstandingData, PlanningLine } from "@/types";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { fetchPlannedData } from "@/store/slices/planningDataSlice";
+import { buildStockIndex, stockKey } from "@/lib/stock";
 
 import LeftInventoryPanel from "./LeftInventoryPanel";
 import RightPanel from "./RightPanel";
@@ -134,24 +135,8 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
   }, [salesOrderOptions]);
 
 
-  const outstandingIndex = useMemo(() => {
-    const m = new Map<string, number>();
-
-    for (const r of outstandingData ?? []) {
-      const itemR = r as any;
-      // 'Try-all' defensive lookup for lot and warehouse
-      const lot = itemR?.lot_no ?? itemR?.lot_number ?? itemR?.lot;
-      const wh = itemR?.warehouse_location ?? itemR?.wh_name_lot_location ?? itemR?.warehouse ?? itemR?.wh;
-
-      const key = makeKey(lot, wh);
-      const qty = Number(itemR?.outstanding_stock ?? 0) || 0;
-      m.set(key, (m.get(key) ?? 0) + qty);
-    }
-
-    return m;
-  }, [outstandingData]);
-
-  // console.log(outstandingIndex)
+  // Plannable bags per (lot × warehouse); the planning form and edit mode both read this.
+  const outstandingIndex = useMemo(() => buildStockIndex(outstandingData), [outstandingData]);
 
   // planner dropdown options
   const plannerOptions = useMemo(() => {
@@ -219,7 +204,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const normalized = matches.map((item: any) => {
       const lot = String(item.lot_no ?? item.lot_number ?? item.lot ?? "").trim();
       const wh = String(item.wh_name_lot_location ?? item.warehouse ?? item.warehouse_location ?? "").trim();
-      const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
+      const max = outstandingIndex.get(stockKey(lot, wh)) ?? 0;
 
       return {
         ...emptyLine(),
@@ -270,7 +255,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     const normalized = matches.map((item: any) => {
       const lot = String(item.lot_no ?? "").trim();
       const wh = String(item.wh_name_lot_location ?? "").trim();
-      const max = outstandingIndex.get(makeKey(lot, wh)) ?? 0;
+      const max = outstandingIndex.get(stockKey(lot, wh)) ?? 0;
 
       return {
         ...emptyLine(),
@@ -379,7 +364,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
       // Create flow strict max check
       if (!isEditMode) {
         if (!(max > 0)) {
-          toast.error(`Row ${rowNo}: Outstanding (Max) is 0`);
+          toast.error(`Row ${rowNo}: Lot ${line.lot} @ ${line.warehouse} has no stock to plan (sheet: ${max} bags)`);
           return;
         }
         if (bags > max) {
@@ -507,6 +492,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
         mode={planningMode}
         onClose={() => setOpenPlanning(false)}
         outstandingData={outstandingData}
+        stockIndex={outstandingIndex}
         salesOrderOptions={salesOrderOptions}
         salesOrderIndex={salesOrderIndex}
         planner={planner}
@@ -534,16 +520,3 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
     </>
   );
 }
-
-
-const norm = (v: any) => String(v ?? "").trim().toUpperCase();
-
-// Lot normalization: "0012" -> "12" (if your lots are numeric-like)
-const normLot = (v: any) => {
-  const s = String(v ?? "").trim();
-  // keep as-is if non-numeric
-  if (!/^\d+$/.test(s)) return s.toUpperCase();
-  return String(Number(s)); // "0012" -> 12 -> "12"
-};
-
-const makeKey = (lot: any, wh: any) => `${normLot(lot)}|${norm(wh)}`;

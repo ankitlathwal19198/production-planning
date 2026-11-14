@@ -4,8 +4,24 @@
 import React, { useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SalesOrder, OutstandingData, PlanningLine } from "@/types";
+import { stockKey } from "@/lib/stock";
 import SalesOrderDropdown from "./SalesOrderDropdown";
 import SearchableDropdown from "./SearchableDropdown";
+
+// Text colour for a bag count: green when there is stock to plan, red when the sheet is negative.
+const bagsTone = (n: number) =>
+    n > 0
+        ? "text-emerald-700 dark:text-emerald-300"
+        : n < 0
+            ? "text-red-600 dark:text-red-400"
+            : "text-gray-500 dark:text-gray-400";
+
+const maxBadgeTone = (n: number) =>
+    n > 0
+        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
+        : n < 0
+            ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200"
+            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300";
 
 function TrashIcon() {
     return (
@@ -41,6 +57,8 @@ type Props = {
     onClose: () => void;
 
     outstandingData: OutstandingData[];
+    /** Plannable bags per (lot × warehouse), built by buildStockIndex. */
+    stockIndex: Map<string, number>;
     salesOrderOptions: SalesOrder[];
     salesOrderIndex: Map<string, SalesOrder>;
 
@@ -77,6 +95,7 @@ export default function PlanningFormModal({
     mode,
     onClose,
     outstandingData,
+    stockIndex,
     salesOrderOptions,
     salesOrderIndex,
     planner,
@@ -120,14 +139,7 @@ export default function PlanningFormModal({
             ),
         ].sort();
 
-    const getOutstanding = (data: any[], lot: any, wh: any) =>
-        (data ?? []).reduce(
-            (s, r) =>
-                String(r.lot_no) === String(lot) && String(r.warehouse_location) === String(wh)
-                    ? s + Number(r.outstanding_stock ?? 0)
-                    : s,
-            0
-        );
+    const stockOf = (lot: unknown, wh: unknown) => stockIndex.get(stockKey(lot, wh)) ?? 0;
 
     // ----- styling (dark ready) -----
     const clsManual =
@@ -193,9 +205,12 @@ export default function PlanningFormModal({
 
     function handleWarehouseChange(idx: number, wh: string) {
         const lot = lines[idx]?.lot ?? "";
-        const max = getOutstanding(outstandingData as any, lot, wh);
+        const max = stockOf(lot, wh);
         const currentVal = lines[idx]?.bags_for_planning;
-        const nextBags = currentVal === "" ? "" : Math.min(Number(currentVal ?? 0), max);
+        const capped = Math.min(Number(currentVal ?? 0), max);
+        // Edit mode keeps a negative result so "Update" refuses it, instead of
+        // silently overwriting an existing planning row with 0 bags.
+        const nextBags = currentVal === "" ? "" : isEditMode ? capped : Math.max(0, capped);
         patchLine(idx, {
             warehouse: wh,
             total_bags: max,
@@ -213,15 +228,15 @@ export default function PlanningFormModal({
     }
 
     const lotOptions = useMemo(() => {
-        // show only lots that actually have stock
+        // show only lots that have stock to plan in at least one warehouse
         const rows = (outstandingData as any) ?? [];
         const lots = rows
-            .filter((r: any) => Number(r.outstanding_stock ?? 0) > 0)
+            .filter((r: any) => (stockIndex.get(stockKey(r.lot_no, r.warehouse_location)) ?? 0) > 0)
             .map((r: any) => String(r.lot_no ?? "").trim())
             .filter(Boolean);
 
         return Array.from(new Set(lots)).sort((a, b) => Number(a) - Number(b));
-    }, [outstandingData]);
+    }, [outstandingData, stockIndex]);
 
     return (
         <AnimatePresence>
@@ -363,6 +378,12 @@ export default function PlanningFormModal({
                                         {lines.map((line, idx) => {
 
                                             const whOptions = getWarehousesByLot(outstandingData as any, line.lot);
+                                            const max = Number(line.total_bags ?? 0);
+                                            const whHints: Record<string, React.ReactNode> = {};
+                                            for (const wh of whOptions) {
+                                                const bags = stockOf(line.lot, wh);
+                                                whHints[String(wh)] = <span className={`font-semibold ${bagsTone(bags)}`}>{bags} bags</span>;
+                                            }
 
                                             return (
                                                 <motion.tr
@@ -449,6 +470,7 @@ export default function PlanningFormModal({
                                                             searchPlaceholder="Search warehouse..."
                                                             dropdownWidth={360}
                                                             dropdownMaxHeight={360}
+                                                            hints={whHints}
                                                             onChange={(v) => handleWarehouseChange(idx, v)}
                                                         />
                                                     </td>
@@ -460,17 +482,23 @@ export default function PlanningFormModal({
                                                             min={0}
                                                             className={clsManual}
                                                             value={line.bags_for_planning ?? ""}
-                                                            disabled={!isEditMode && !line.total_bags}
+                                                            disabled={!isEditMode && !(max > 0)}
                                                             onChange={(e) => handleBagsChange(idx, e.target.value)}
                                                         />
-                                                         <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                             Max: {Number(line.total_bags ?? 0)}
-                                                         </div>
-                                                     </td>
+                                                        {!isEditMode && line.warehouse && !(max > 0) ? (
+                                                            <div className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+                                                                No stock / स्टॉक नहीं — sheet: {max} bags
+                                                            </div>
+                                                        ) : (
+                                                            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                                Max: {max}
+                                                            </div>
+                                                        )}
+                                                    </td>
 
-                                                     <td className="p-3">
-                                                        <span className="inline-flex rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                                                            {Number(line.total_bags ?? 0)}
+                                                    <td className="p-3">
+                                                        <span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold ${maxBadgeTone(max)}`}>
+                                                            {max}
                                                         </span>
                                                     </td>
 
