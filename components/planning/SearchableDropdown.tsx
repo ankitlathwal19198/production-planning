@@ -17,6 +17,7 @@ export default function SearchableDropdown({
     dropdownWidth = 360,
     dropdownMaxHeight = 320,
     hints,
+    emptyText = "No results",
 }: {
     value: string;
     options: string[];
@@ -28,6 +29,8 @@ export default function SearchableDropdown({
     dropdownMaxHeight?: number;
     /** Optional note shown at the right of an option, keyed by the option's text. */
     hints?: Record<string, ReactNode>;
+    /** Shown when nothing matches, e.g. why the list is empty. */
+    emptyText?: ReactNode;
 }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -141,7 +144,7 @@ export default function SearchableDropdown({
 
                         <div style={{ maxHeight: dropdownMaxHeight }} className="overflow-auto">
                             {filtered.length === 0 ? (
-                                <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No results</div>
+                                <div className="p-3 text-sm text-gray-500 dark:text-gray-400">{emptyText}</div>
                             ) : (
                                 filtered.map((x, idx) => (
                                     <motion.button

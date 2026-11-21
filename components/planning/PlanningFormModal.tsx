@@ -59,6 +59,10 @@ type Props = {
     outstandingData: OutstandingData[];
     /** Plannable bags per (lot × warehouse), built by buildStockIndex. */
     stockIndex: Map<string, number>;
+    /** Load state of outstandingData, so an empty lot list can say why. */
+    stockStatus: "idle" | "loading" | "succeeded" | "failed";
+    stockError: string | null;
+    onRetryStock: () => void;
     salesOrderOptions: SalesOrder[];
     salesOrderIndex: Map<string, SalesOrder>;
 
@@ -96,6 +100,9 @@ export default function PlanningFormModal({
     onClose,
     outstandingData,
     stockIndex,
+    stockStatus,
+    stockError,
+    onRetryStock,
     salesOrderOptions,
     salesOrderIndex,
     planner,
@@ -238,6 +245,16 @@ export default function PlanningFormModal({
         return Array.from(new Set(lots)).sort((a, b) => Number(a) - Number(b));
     }, [outstandingData, stockIndex]);
 
+    // Why the lot list is empty, instead of a bare "No results".
+    const lotEmptyText =
+        lotOptions.length > 0
+            ? undefined
+            : stockStatus === "failed"
+                ? "Stock not loaded, press Retry above / ऊपर Retry दबाएं"
+                : stockStatus !== "succeeded"
+                    ? "Loading lots… / लॉट लोड हो रहे हैं…"
+                    : "No lot has stock / किसी लॉट में स्टॉक नहीं";
+
     return (
         <AnimatePresence>
             {open ? (
@@ -272,11 +289,35 @@ export default function PlanningFormModal({
                         <div className="h-[calc(100vh-64px)] overflow-auto p-4 bg-white dark:bg-gray-950">
                             {/* top bar */}
                             <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                                <div className="text-sm text-gray-600 dark:text-gray-300">
-                                    Rows:{" "}
-                                    <span className="font-semibold text-gray-900 dark:text-gray-100">
-                                        {lines.length}
+                                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                                    <span>
+                                        Rows:{" "}
+                                        <span className="font-semibold text-gray-900 dark:text-gray-100">
+                                            {lines.length}
+                                        </span>
                                     </span>
+
+                                    {stockStatus === "failed" ? (
+                                        <span className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-200">
+                                            {outstandingData.length
+                                                ? "Stock refresh failed, showing earlier stock / स्टॉक अपडेट नहीं हुआ"
+                                                : "Stock not loaded / स्टॉक लोड नहीं हुआ"}
+                                            {stockError ? `: ${stockError}` : ""}
+                                            <button
+                                                type="button"
+                                                onClick={onRetryStock}
+                                                className="rounded-md bg-red-600 px-2 py-0.5 font-semibold text-white hover:bg-red-700"
+                                            >
+                                                Retry / दोबारा
+                                            </button>
+                                        </span>
+                                    ) : stockStatus !== "succeeded" ? (
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                            {outstandingData.length
+                                                ? "Refreshing stock… / स्टॉक अपडेट हो रहा है…"
+                                                : "Loading stock… / स्टॉक लोड हो रहा है…"}
+                                        </span>
+                                    ) : null}
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
@@ -436,6 +477,7 @@ export default function PlanningFormModal({
                                                             searchPlaceholder="Search lot..."
                                                             dropdownWidth={320}
                                                             dropdownMaxHeight={360}
+                                                            emptyText={lotEmptyText}
                                                             onChange={(v) => handleLotChange(idx, v)}
                                                         />
                                                     </td>

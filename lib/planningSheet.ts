@@ -12,8 +12,23 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: "v4", auth });
 
-function parseValue(value: string): string | number | boolean {
-  const trimmed = value.trim();
+/**
+ * Read what is typed in the cells, not formula results. A normal value read of this
+ * spreadsheet waits until Google finishes recalculating it, which takes minutes after
+ * each edit (Vercel then times out with 504). Planning columns A–J and the header row
+ * hold typed data, so FORMULA returns the same values at once; dates come back as the
+ * text the sheet shows.
+ */
+const READ_TYPED_CELLS = {
+  valueRenderOption: "FORMULA",
+  dateTimeRenderOption: "FORMATTED_STRING",
+} as const;
+
+function parseValue(value: unknown): string | number | boolean {
+  // READ_TYPED_CELLS returns numbers and booleans as they are, text as strings
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  value = String(value ?? "");
+  const trimmed = (value as string).trim();
   if (trimmed === "") return "";
 
   const num = Number(trimmed);
@@ -23,7 +38,7 @@ function parseValue(value: string): string | number | boolean {
   if (lower === "true") return true;
   if (lower === "false") return false;
 
-  return value;
+  return value as string;
 }
 
 function normalizeHeader(key: string) {
@@ -56,10 +71,11 @@ export async function fetchSheetData<T = Record<string, any>>(
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
     range,
+    ...READ_TYPED_CELLS,
   });
 
-  const [headers = [], ...rows] = (res.data.values ?? []) as string[][];
-  const keys = headers.map(normalizeHeader);
+  const [headers = [], ...rows] = (res.data.values ?? []) as unknown[][];
+  const keys = headers.map((h) => normalizeHeader(String(h ?? "")));
 
   // Determine starting row for _rowNumber index
   // e.g. "Sheet!A1:J" -> data starts at row 2
@@ -105,10 +121,11 @@ async function fetchPlanningSheetHeaders(): Promise<string[]> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
     range: `${PLANNING_SHEET_NAME}!A1:Z1`,
+    ...READ_TYPED_CELLS,
   });
 
-  const headers = (res.data.values?.[0] ?? []) as string[];
-  return headers.map(normalizeHeader);
+  const headers = (res.data.values?.[0] ?? []) as unknown[];
+  return headers.map((h) => normalizeHeader(String(h ?? "")));
 }
 
 export async function fetchLastPlanningUidNumber(): Promise<number> {
@@ -119,9 +136,10 @@ export async function fetchLastPlanningUidNumber(): Promise<number> {
     spreadsheetId: sheetId,
     range: `${PLANNING_SHEET_NAME}!A2:A`,
     majorDimension: "COLUMNS",
+    ...READ_TYPED_CELLS,
   });
 
-  const col = (res.data.values?.[0] ?? []) as string[];
+  const col = (res.data.values?.[0] ?? []) as unknown[];
 
   for (let i = col.length - 1; i >= 0; i--) {
     const v = String(col[i] ?? "").trim();
@@ -281,9 +299,10 @@ export async function fetchPlanningBySalesOrder(salesOrder: string): Promise<Pla
   const colRes = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
     range: `${PLANNING_SHEET_NAME}!${colLetter}2:${colLetter}`,
+    ...READ_TYPED_CELLS,
   });
 
-  const colValues = (colRes.data.values ?? []) as string[][];
+  const colValues = (colRes.data.values ?? []) as unknown[][];
   const matchingRowNumbers: number[] = [];
 
   for (let i = 0; i < colValues.length; i++) {
@@ -302,13 +321,14 @@ export async function fetchPlanningBySalesOrder(salesOrder: string): Promise<Pla
   const batchRes = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: sheetId,
     ranges,
+    ...READ_TYPED_CELLS,
   });
 
   const valueRanges = batchRes.data.valueRanges ?? [];
   const matches: PlanningRowMatch[] = [];
 
   for (let i = 0; i < valueRanges.length; i++) {
-    const row = (valueRanges[i].values?.[0] ?? []) as string[];
+    const row = (valueRanges[i].values?.[0] ?? []) as unknown[];
     const rowNumber = matchingRowNumbers[i];
 
     const obj = headerKeys.reduce((acc, key, idx) => {
@@ -346,9 +366,10 @@ export async function fetchPlanningByLot(lot: string): Promise<PlanningRowMatch[
   const colRes = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
     range: `${PLANNING_SHEET_NAME}!${colLetter}2:${colLetter}`,
+    ...READ_TYPED_CELLS,
   });
 
-  const colValues = (colRes.data.values ?? []) as string[][];
+  const colValues = (colRes.data.values ?? []) as unknown[][];
   const matchingRowNumbers: number[] = [];
 
   for (let i = 0; i < colValues.length; i++) {
@@ -367,13 +388,14 @@ export async function fetchPlanningByLot(lot: string): Promise<PlanningRowMatch[
   const batchRes = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: sheetId,
     ranges,
+    ...READ_TYPED_CELLS,
   });
 
   const valueRanges = batchRes.data.valueRanges ?? [];
   const matches: PlanningRowMatch[] = [];
 
   for (let i = 0; i < valueRanges.length; i++) {
-    const row = (valueRanges[i].values?.[0] ?? []) as string[];
+    const row = (valueRanges[i].values?.[0] ?? []) as unknown[];
     const rowNumber = matchingRowNumbers[i];
 
     const obj = headerKeys.reduce((acc, key, idx) => {

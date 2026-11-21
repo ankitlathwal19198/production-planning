@@ -15,6 +15,8 @@ export type OutstandingDataState = {
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
   lastUpdated: string | null;
+  /** The newest request; an older one that finishes later must not overwrite it. */
+  currentRequestId: string | null;
 };
 
 const initialState: OutstandingDataState = {
@@ -22,26 +24,41 @@ const initialState: OutstandingDataState = {
   status: "idle",
   error: null,
   lastUpdated: null,
+  currentRequestId: null,
 };
 
 const TTL_MS = 0;
+// The API answers in a few seconds; past this something is stuck, so say so instead of spinning.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export const fetchOutstandingData = createAsyncThunk<
   { items: OutstandingData[]; fetchedAt: string },
-  { force?: boolean } | void,
+  /** fresh: skip the CDN copy, e.g. right after a planning was saved. */
+  { force?: boolean; fresh?: boolean } | void,
   { state: any; rejectValue: string }
 >(
   "outstanding/fetchOutstandingData",
-  async (_arg, { rejectWithValue }) => {
+  async (arg, { rejectWithValue }) => {
+    const fresh = (arg as { fresh?: boolean } | undefined)?.fresh === true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch("/api/outstanding-stock", {
+      const url = fresh ? `/api/outstanding-stock?fresh=${Date.now()}` : "/api/outstanding-stock";
+      const res = await fetch(url, {
         headers: { Accept: "application/json" },
         cache: "no-store",
+        signal: controller.signal,
       });
 
       if (!res.ok) {
         const t = await res.text().catch(() => "");
-        throw new Error(`Outstanding Data API failed (${res.status}): ${t.slice(0, 120)}`);
+        let apiError = "";
+        try {
+          apiError = JSON.parse(t)?.error ?? "";
+        } catch {
+          // not JSON, e.g. Vercel's own 504 page
+        }
+        throw new Error(apiError || `Stock API failed (${res.status}): ${t.slice(0, 120)}`);
       }
 
       const ct = res.headers.get("content-type") || "";
@@ -55,7 +72,12 @@ export const fetchOutstandingData = createAsyncThunk<
 
       return { items: rows, fetchedAt: new Date().toISOString() };
     } catch (e: any) {
+      if (e?.name === "AbortError") {
+        return rejectWithValue("Stock request timed out. Try again.");
+      }
       return rejectWithValue(e?.message || "Failed to fetch outstanding data");
+    } finally {
+      clearTimeout(timer);
     }
   },
   {
@@ -64,7 +86,7 @@ export const fetchOutstandingData = createAsyncThunk<
       if (force) return true; // ✅ allow force refetch
 
       const state = getState();
-      const s: OutstandingDataState = state.outstanding;
+      const s: OutstandingDataState = state.outstandingStock;
 
       if (s.status === "loading") return false;
       if (s.status === "succeeded" && TTL_MS === 0) return false;
@@ -88,22 +110,28 @@ const outstandingSlice = createSlice({
       state.status = "idle";
       state.error = null;
       state.lastUpdated = null;
+      state.currentRequestId = null;
     },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchOutstandingData.pending, (state) => {
+      .addCase(fetchOutstandingData.pending, (state, action) => {
         state.status = "loading";
         state.error = null;
+        state.currentRequestId = action.meta.requestId;
       })
       .addCase(fetchOutstandingData.fulfilled, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) return;
         state.status = "succeeded";
         state.items = action.payload.items;
         state.lastUpdated = action.payload.fetchedAt;
+        state.currentRequestId = null;
       })
       .addCase(fetchOutstandingData.rejected, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) return;
         state.status = "failed";
         state.error = (action.payload as string) || action.error.message || "Failed";
+        state.currentRequestId = null;
       });
   },
 });

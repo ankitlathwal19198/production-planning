@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import type { SalesOrder, OutstandingData, PlanningLine } from "@/types";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
 import { fetchPlannedData } from "@/store/slices/planningDataSlice";
+import { fetchOutstandingData } from "@/store/slices/outstandingDataSlice";
 import { buildStockIndex, stockKey } from "@/lib/stock";
 
 import LeftInventoryPanel from "./LeftInventoryPanel";
@@ -36,6 +37,8 @@ const emptyLine = (): PlanningLine => ({
 export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
   // Redux data
   const outstandingData = useAppSelector((s) => s.outstandingStock.items) as OutstandingData[];
+  const stockStatus = useAppSelector((s) => s.outstandingStock.status);
+  const stockError = useAppSelector((s) => s.outstandingStock.error);
   const salesOrderData = useAppSelector((s) => s.salesOrder.items) as SalesOrder[];
 
   const [submitting, setSubmitting] = useState(false);
@@ -71,6 +74,10 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
   useEffect(() => {
     dispatch(fetchPlannedData());
   }, [dispatch]);
+
+  // Stock moves as others plan, so reload it each time the form opens.
+  // fresh: skip the CDN copy, so a planning just saved already counts.
+  const reloadStock = (fresh = false) => dispatch(fetchOutstandingData({ force: true, fresh }));
 
   // ✅ Edit by Sales Order
   const [editSalesOrder, setEditSalesOrder] = useState("");
@@ -323,6 +330,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
 
       // IMPORTANT: Refresh global data because all row numbers below the deleted one have shifted!
       dispatch(fetchPlannedData());
+      reloadStock(true); // the deleted bags are free again
 
       // Remove from UI
       const result = lines.filter((_, i) => i !== idx);
@@ -418,6 +426,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
 
       // ✅ Refresh global data so client-side search is updated
       dispatch(fetchPlannedData());
+      reloadStock(true); // the bags just planned come off the lot's stock
     } catch (err: any) {
       toast.dismiss(toastId);
       toast.error(err?.message || "Network error");
@@ -444,6 +453,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
                   setPlanningMode("create");
                   // resetModalState();
                   setOpenPlanning(true);
+                  reloadStock();
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-medium ring-1 ring-white/30 backdrop-blur hover:bg-white/20 active:scale-[0.99]"
               >
@@ -456,6 +466,7 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
                   setPlanningMode("edit");
                   resetModalState();
                   setOpenPlanning(true);
+                  reloadStock();
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-medium ring-1 ring-white/30 backdrop-blur hover:bg-white/20 active:scale-[0.99]"
               >
@@ -493,6 +504,9 @@ export default function PlanningWorkspace({ user }: { user: CurrentUser }) {
         onClose={() => setOpenPlanning(false)}
         outstandingData={outstandingData}
         stockIndex={outstandingIndex}
+        stockStatus={stockStatus}
+        stockError={stockError}
+        onRetryStock={() => reloadStock()}
         salesOrderOptions={salesOrderOptions}
         salesOrderIndex={salesOrderIndex}
         planner={planner}
